@@ -1,0 +1,26 @@
+Linux Resource Monitor, written in C -- version 0.1
+
+Monitors the following resources
+  - CPU Usage%
+  - RAM Usage%
+  - CPU Temperature
+  - Power Draw (in watts)
+  - Battery drain rate (in microJoules)
+  - Batter Charge %
+  - Download / upload speed of primary internet device
+  - Read / write speed of primary hard drive
+  - Fan speed
+
+Usage
+  - Run "make"
+  - Run "./resmon"
+    - Log file is saved to ~/documents/logs/resmon.tsv
+  - Run "./plotter.pg" to plot a graph of the last hour's resource usage
+    (needs gnuplot)
+
+Notes
+  - All configuration for running and graphing is at the top of both source
+    files (resourceMonitor.c and plotter.pg); you will likely need to
+configure them by pointing them towards the appropriate system resources for
+relevant hardware
+

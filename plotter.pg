@@ -1,0 +1,102 @@
+#!/usr/bin/gnuplot -c
+#Plotter for resource monitor output
+
+TAIL         = 1                              #Whether to plot only the tail of the data
+if (ARGC > 0) {
+  SECONDS    = ARG1                           #Print user specified number of seconds
+  if (SECONDS == 0) {
+     TAIL    = 0                              #Print all of the data
+  }
+} else {
+  SECONDS    = 60*60                          #Print 1 hour of data by default
+}
+
+TIMEZONE     = -6                             #Shift for time donze (-6 = CST)
+SCALE        = 8                              #Space between seconds on graph
+
+INPUTFILE    = "~/documents/logs/resmon.tsv"  #Input data location
+OUTFILE      = "/tmp/resmon.png"              #Output image location
+IMVIEWER     = "viewnior"                     #Image viewer used for viewing the data
+MAXFANSPEED  = 6500                           #RPM
+MAXDRAIN     = 5000                           #milliJoules
+MAXPOWER     = 45                             #Watts
+MAXTRANS     = 10**9                          #Bytes/sec
+MAXPLOTWIDTH = 32767                          #Max size allowed by GNUPlot
+
+GETSTART     = '`head -n1 '.INPUTFILE.' | cut -f 1`'  #First field is first time of logging
+STARTTIME    = @GETSTART                              #Execute the command built above
+TOFF         = STARTTIME+TIMEZONE*3600                #Time zone + start time offset for time axis
+
+#Legend labels and line colors
+t_ram    = "ram";    c_ram    = "#FFBB00"     #RAM
+t_temp   = "temp";   c_temp   = "#FF2222"     #Temperature
+t_fan    = "fan";    c_fan    = "#8888FF"     #Fan
+t_charge = "charge"; c_charge = "#00FF00"     #Battery Charge
+t_drain  = "drain";  c_drain  = "#0000FF"     #Battery Power Usage
+t_down   = "down";   c_down   = "#FF88BB"     #Download
+t_up     = "up";     c_up     = "#880088"     #Upload
+t_read   = "read";   c_read   = "#BBFF44"     #Disk Reads
+t_write  = "write";  c_write  = "#448822"     #Disk Writes
+t_power  = "power";  c_power  = "#FFFF00"     #Power Usage
+t_cpu    = "cpu";    c_cpu    = "#FFFFFF"     #CPU Usage
+
+reset
+stats INPUTFILE using 1:3 name "a" nooutput   #Get file information loaded into memory
+x_left = a_min_x+TOFF
+x_right = a_max_x+TOFF
+tickspan = 60
+if (TAIL && x_right>SECONDS) {
+  x_left = x_right-SECONDS
+  set xrange [x_left:x_right]
+}
+
+plotwidth = (x_right-x_left)*SCALE  #Get width of time field
+if (plotwidth > MAXPLOTWIDTH) {
+  plotwidth = MAXPLOTWIDTH
+  tickspan = plotwidth/100
+}
+
+set xtics x_left,tickspan,x_right #Set tick marks every minute
+set terminal pngcairo dashed enhanced background rgb 'black' size plotwidth,480 #Set plot width to fit the data
+set termoption dash
+
+set xlabel 'time' tc rgb 'white'
+set ylabel '% usage' tc rgb 'white'
+set border lc rgb 'white'
+set key tc rgb 'white'
+
+set timefmt "%s"
+set format x "%Y-%m-%d %H:%M:%S"
+set xdata time
+
+set output OUTFILE
+set key outside horizontal bottom left
+set yrange [-5:105]
+set xtics rotate by 315 offset -0.0,-0.0
+set xtics font ", 12"
+
+normalize(value, min, max) = ( value > max ? 100 : 100 * (value - min) / (max - min) )
+logtrans(value, min, max) = ( 100*(log10(value+1)-log10(min))/(log10(max)-log10(min)) )
+
+set style line 1 lw 1
+set style line 2 lw 2 dt '-'
+
+# set label 1 "Generate plot labels from first row in each column"
+# set label 1 at graph 0.02, 0.85 tc lt 3
+# set label 2 "Generate x-axis labels from first column in each row"
+# set label 2 at graph 0.02, 0.80 tc lt 3
+
+plot INPUTFILE u ($1+TOFF):2                               t t_ram    w lines ls 1 lc rgb c_ram, \
+            "" u ($1+TOFF):3                               t t_temp   w lines ls 1 lc rgb c_temp, \
+            "" u ($1+TOFF):(normalize($4, 0, MAXFANSPEED)) t t_fan    w lines ls 1 lc rgb c_fan, \
+            "" u ($1+TOFF):5                               t t_charge w lines ls 1 lc rgb c_charge, \
+            "" u ($1+TOFF):(normalize($6, 0, MAXDRAIN))    t t_drain  w lines ls 1 lc rgb c_drain, \
+            "" u ($1+TOFF):(logtrans($7, 1, MAXTRANS))     t t_down   w lines ls 2 lc rgb c_down, \
+            "" u ($1+TOFF):(logtrans($8, 1, MAXTRANS))     t t_up     w lines ls 1 lc rgb c_up, \
+            "" u ($1+TOFF):(logtrans($9, 1, MAXTRANS))     t t_read   w lines ls 2 lc rgb c_read, \
+            "" u ($1+TOFF):(logtrans($10, 1, MAXTRANS))    t t_write  w lines ls 1 lc rgb c_write, \
+            "" u ($1+TOFF):(normalize($11, 0, MAXPOWER))   t t_power  w lines ls 1 lc rgb c_power, \
+            "" u ($1+TOFF):12                              t t_cpu    w lines ls 1 lc rgb c_cpu
+#
+
+system(sprintf("%s %s 2>/dev/null &",IMVIEWER,OUTFILE))
