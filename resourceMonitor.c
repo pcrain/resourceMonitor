@@ -1,10 +1,11 @@
-#include <stdio.h>       //fscanf()
-#include <stdlib.h>      //malloc()
-#include <unistd.h>      //sleep()
-#include <sys/time.h>    //gettimeofday()
-#include <time.h>        //time()
-#include <signal.h>      //signal()
-#include <string.h>      //memcpy()
+#include <stdio.h>        //fscanf()
+#include <stdlib.h>       //malloc()
+#include <unistd.h>       //sleep()
+#include <sys/time.h>     //gettimeofday()
+#include <time.h>         //time()
+#include <signal.h>       //signal()
+#include <string.h>       //memcpy()
+#include <sys/resource.h> //setpriority()
 
 // #define DEBUGIT         //Comment out for release
 
@@ -155,6 +156,8 @@ int main(int argc, char** argv) {
   #ifndef DEBUGIT
     printf("Resource monitoring started\n");
   #endif
+
+  setpriority(PRIO_PROCESS, 0, 1); //We are slightly lower priority than normal processes
 
   long long unsigned logBeginTime = 0;
 

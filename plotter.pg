@@ -22,21 +22,22 @@ MAXDRAIN     = 10000                          #milliJoules
 MAXPOWER     = 100                            #Watts
 MAXTRANS     = 10**9                          #Bytes/sec
 MAXPLOTWIDTH = 32767                          #Max size allowed by GNUPlot
+PLOTHEIGHT   = 480                            #Height of the plot
 
 GETSTART     = '`head -n1 '.INPUTFILE.' | cut -f 1`'  #First field is first time of logging
 STARTTIME    = @GETSTART                              #Execute the command built above
 TOFF         = STARTTIME+TIMEZONE*3600                #Time zone + start time offset for time axis
 
 #Legend labels and line colors
-t_ram    = "ram (%)";    c_ram    = "#FFBB00"     #RAM
-t_temp   = "temp (C)";   c_temp   = "#FF2222"     #Temperature
+t_ram    = "ram (%)";    c_ram    = "#BB00BB"     #RAM
+t_temp   = "temp (C)";   c_temp   = "#FF5555"     #Temperature
 t_fan    = "fan (RPS)";    c_fan    = "#8888FF"     #Fan
-t_charge = "charge (%)"; c_charge = "#00FF00"     #Battery Charge
+t_charge = "charge (%)"; c_charge = "#BBFF44"     #Battery Charge
 t_drain  = "drain (dJ)";  c_drain  = "#0000FF"     #Battery Power Usage
-t_down   = "down (bps)";   c_down   = "#FF88BB"     #Download
-t_up     = "up (bps)";     c_up     = "#880088"     #Upload
-t_read   = "read (bps)";   c_read   = "#BBFF44"     #Disk Reads
-t_write  = "write (bps)";  c_write  = "#448822"     #Disk Writes
+t_down   = "down (bps)";   c_down   = "#44BBFF"     #Download
+t_up     = "up (bps)";     c_up     = "#FFCC00"     #Upload
+t_read   = "read (bps)";   c_read   = "#00FF00"     #Disk Reads
+t_write  = "write (bps)";  c_write  = "#FF88BB"     #Disk Writes
 t_power  = "power (W)";  c_power  = "#FFFF00"     #Power Usage
 t_cpu    = "cpu (%)";    c_cpu    = "#FFFFFF"     #CPU Usage
 
@@ -57,16 +58,18 @@ if (plotwidth > MAXPLOTWIDTH) {
 }
 
 set xtics x_left,tickspan,x_right #Set tick marks every minute
-set terminal pngcairo dashed enhanced background rgb 'black' size plotwidth,480 #Set plot width to fit the data
+set terminal pngcairo dashed enhanced background rgb 'black' size plotwidth,PLOTHEIGHT #Set plot width to fit the data
 set termoption dash
 set output OUTFILE
 
 set key tc rgb 'white'
 set key samplen 2.5
 set key width -2.5
-set key outside horizontal bottom left
+# set key outside horizontal bottom left
+set lmargin 30
+set key at character 20,22
 
-set xlabel 'time' tc rgb 'white'
+# set xlabel 'time' tc rgb 'white'
 set ylabel 'usage (% / C / RPS / dJ / W)' tc rgb 'white'
 set y2label 'transfer rate (bps)' tc rgb 'white'
 set border lc rgb 'white'
@@ -77,7 +80,7 @@ set xdata time
 
 set border 14
 
-set xtics rotate by 315 offset -0.0,-0.0
+set xtics rotate by 335 offset -0.0,-0.0
 set xtics font ", 12"
 
 set log y2
@@ -89,7 +92,7 @@ normalize(value, min, max) = ( value > max ? 100 : 100 * (value - min) / (max - 
 logtrans(value, min, max) = ( 100*(log10(value+1)-log10(min))/(log10(max)-log10(min)) )
 
 set style line 1 lw 1
-set style line 2 lw 2 dt '-'
+set style line 2 lw 2 dt '.'
 
 # set label 1 "Generate plot labels from first row in each column"
 # set label 1 at graph 0.02, 0.85 tc lt 3
