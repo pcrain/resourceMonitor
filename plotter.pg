@@ -18,8 +18,8 @@ INPUTFILE    = "~/documents/logs/resmon.tsv"  #Input data location
 OUTFILE      = "/tmp/resmon.png"              #Output image location
 IMVIEWER     = "viewnior"                     #Image viewer used for viewing the data
 MAXFANSPEED  = 6000                           #RPM
-MAXDRAIN     = 5000                           #milliJoules
-MAXPOWER     = 45                             #Watts
+MAXDRAIN     = 10000                          #milliJoules
+MAXPOWER     = 100                            #Watts
 MAXTRANS     = 10**9                          #Bytes/sec
 MAXPLOTWIDTH = 32767                          #Max size allowed by GNUPlot
 
@@ -32,7 +32,7 @@ t_ram    = "ram (%)";    c_ram    = "#FFBB00"     #RAM
 t_temp   = "temp (C)";   c_temp   = "#FF2222"     #Temperature
 t_fan    = "fan (RPS)";    c_fan    = "#8888FF"     #Fan
 t_charge = "charge (%)"; c_charge = "#00FF00"     #Battery Charge
-t_drain  = "drain (mJ)";  c_drain  = "#0000FF"     #Battery Power Usage
+t_drain  = "drain (dJ)";  c_drain  = "#0000FF"     #Battery Power Usage
 t_down   = "down (bps)";   c_down   = "#FF88BB"     #Download
 t_up     = "up (bps)";     c_up     = "#880088"     #Upload
 t_read   = "read (bps)";   c_read   = "#BBFF44"     #Disk Reads
@@ -67,7 +67,7 @@ set key width -2.5
 set key outside horizontal bottom left
 
 set xlabel 'time' tc rgb 'white'
-set ylabel 'usage' tc rgb 'white'
+set ylabel 'usage (% / C / RPS / dJ / W)' tc rgb 'white'
 set y2label 'transfer rate (bps)' tc rgb 'white'
 set border lc rgb 'white'
 
@@ -75,12 +75,14 @@ set timefmt "%s"
 set format x "%Y-%m-%d %H:%M:%S"
 set xdata time
 
-set yrange [-5:105]
+set border 14
+
 set xtics rotate by 315 offset -0.0,-0.0
 set xtics font ", 12"
 
 set log y2
-set y2range [1 : 10000000000.0]
+set yrange [0:105]
+set y2range [1 : 10000000000.0*sqrt(10)]
 set y2tics
 
 normalize(value, min, max) = ( value > max ? 100 : 100 * (value - min) / (max - min) )

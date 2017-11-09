@@ -11,8 +11,10 @@
 #define MAXUINT          10000000000 //Max size uint we will be writing to the log file
 #define POLLSECONDS      1           //Time between polls
 #define FLUSHRATE        60          //Flush every FLUSHRATE polls
-#define IDEVICE          "wlp1s0:"
-#define LOGFILE          "/home/pretzel/documents/logs/resmon.tsv"
+#define IDEVICE          "wlp1s0"    //Name of device connected to the internet
+#define DRIVE            "sda"       //Primary hard drive on your system
+#define USER             "pretzel"   //Name of login user
+#define LOGFILE          "/home/"USER"/documents/logs/resmon.tsv" //Location to save the log file to
 
 #define TEMPERATURE_FILE "/sys/class/thermal/thermal_zone3/temp"
 #define FAN_FILE         "/sys/class/hwmon/hwmon3/fan1_input"
@@ -21,9 +23,9 @@
 #define BAT_NOW_FILE     "/sys/class/power_supply/BAT0/charge_now"
 #define BAT_CURRENT_FILE "/sys/class/power_supply/BAT0/current_now"
 #define POWER_FILE       "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj"
-#define DISK_FILE        "/sys/block/sda/stat"
-#define DISK_SCAN        "%*llu %*llu %llu %*llu %*llu %*llu %llu"
-#define INET_SCAN        "%*[^\n]\n%*[^\n]\nwlp1s0: %llu %*llu %*llu %*llu %*llu %*llu %*llu %*llu %llu"
+#define DISK_FILE        "/sys/block/"DRIVE"/stat"
+#define NET_DN_FILE      "/sys/class/net/"IDEVICE"/statistics/rx_bytes"
+#define NET_UP_FILE      "/sys/class/net/"IDEVICE"/statistics/tx_bytes"
 
 #define BSIZE            256
 
@@ -176,7 +178,8 @@ int main(int argc, char** argv) {
 
   //Initialize file handles
     FILE* stat_file         = fopen("/proc/stat","r");     setvbuf(stat_file,        NULL, _IONBF, 0);
-    FILE* net_file          = fopen("/proc/net/dev","r");  setvbuf(net_file,         NULL, _IONBF, 0);
+    FILE* netup_file        = fopen(NET_UP_FILE,"r");      setvbuf(netup_file,         NULL, _IONBF, 0);
+    FILE* netdn_file        = fopen(NET_DN_FILE,"r");      setvbuf(netdn_file,         NULL, _IONBF, 0);
     FILE* mem_file          = fopen("/proc/meminfo","r");  setvbuf(mem_file,         NULL, _IONBF, 0);
     FILE* temperature_file  = fopen(TEMPERATURE_FILE,"r"); setvbuf(temperature_file, NULL, _IONBF, 0);
     FILE* fan_file          = fopen(FAN_FILE,"r");         setvbuf(fan_file,         NULL, _IONBF, 0);
@@ -194,8 +197,8 @@ int main(int argc, char** argv) {
     lastIdle = read_nth_uint_string(stat_file,1);
     lastPower = read_uint_string(power_file);
 
-    lastRecv = read_nth_uint_string(net_file,3); //First real int, but wlp/1/s/0/ has two ints
-    lastSent = read_nth_uint_string(net_file,8);
+    lastRecv = read_uint_string(netdn_file);
+    lastSent = read_uint_string(netup_file);
 
     lastRead = read_nth_uint_string(disk_file,3);
     lastWrite = read_nth_uint_string(disk_file,4);
@@ -225,9 +228,8 @@ int main(int argc, char** argv) {
 
     //Internet Speed
       unsigned long long recv, sent;
-      rewind(net_file);
-      recv = read_nth_uint_string(net_file,3);
-      sent = read_nth_uint_string(net_file,8);
+      recv = read_uint_string(netdn_file);
+      sent = read_uint_string(netup_file);
 
     //Disk Speed
       unsigned long long read, write;
@@ -249,18 +251,18 @@ int main(int argc, char** argv) {
       total = (totalUser + totalUserLow + totalSys) - (lastUser + lastLow + lastSys);
 
     //Debug printing
-      // dprintf("Time:        %4.2llu us\n",startTime);
-      // dprintf("RAM Usage:   %4.2f%%\n",100.0f*(float)(memTotal-memFree)/memTotal);
-      // dprintf("CPU Temp:    %u C\n",temperature);
-      // dprintf("Fan Speed:   %u RPM\n",fan);
-      // dprintf("Bat Charge:  %4.2f%%\n",100*(float)bat_now/bat_full);
-      // dprintf("Bat Current: %u mJ\n",bat_curr);
-      // dprintf("Download:    %4.2f bytes/sec\n",1000000.0f*(recv - lastRecv)/(utime()-startTime));
-      // dprintf("Upload:      %4.2f bytes/sec\n",1000000.0f*(sent - lastSent)/(utime()-startTime));
-      // dprintf("Disk Read:   %4.2f bytes/sec\n",1000000.0f*(read - lastRead)/(utime()-startTime));
-      // dprintf("Disk Write:  %4.2f bytes/sec\n",1000000.0f*(write - lastWrite)/(utime()-startTime));
-      // dprintf("Power Draw:  %4.2f Watts\n",((float)(power - lastPower))/(utime()-startTime));  //In uJ / uS == J / s == W
-      // dprintf("CPU Usage:   %4.2f%%\n",((float)total/(total+(totalIdle-lastIdle)))*100);
+      dprintf("Time:        %4.2llu us\n",startTime);
+      dprintf("RAM Usage:   %4.2f%%\n",100.0f*(float)(memTotal-memFree)/memTotal);
+      dprintf("CPU Temp:    %u C\n",temperature);
+      dprintf("Fan Speed:   %u RPM\n",fan);
+      dprintf("Bat Charge:  %4.2f%%\n",100*(float)bat_now/bat_full);
+      dprintf("Bat Current: %u mJ\n",bat_curr);
+      dprintf("Download:    %4.2f bytes/sec\n",1000000.0f*(recv - lastRecv)/(utime()-startTime));
+      dprintf("Upload:      %4.2f bytes/sec\n",1000000.0f*(sent - lastSent)/(utime()-startTime));
+      dprintf("Disk Read:   %4.2f bytes/sec\n",1000000.0f*(read - lastRead)/(utime()-startTime));
+      dprintf("Disk Write:  %4.2f bytes/sec\n",1000000.0f*(write - lastWrite)/(utime()-startTime));
+      dprintf("Power Draw:  %4.2f Watts\n",((float)(power - lastPower))/(utime()-startTime));  //In uJ / uS == J / s == W
+      dprintf("CPU Usage:   %4.2f%%\n",((float)total/(total+(totalIdle-lastIdle)))*100);
 
     //Write everything to file
       unsigned long long elapsed = (utime()-startTime);
@@ -294,7 +296,8 @@ int main(int argc, char** argv) {
 
   //Clean up
     fclose(stat_file);
-    fclose(net_file);
+    fclose(netdn_file);
+    fclose(netup_file);
     fclose(temperature_file);
     fclose(fan_file);
     fclose(ac_file);
