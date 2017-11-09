@@ -1,4 +1,4 @@
-Linux Resource Monitor, written in C -- version 0.1
+Linux Resource Monitor, written in C -- version 0.2
 
 Monitors the following resources
   - CPU Usage%
@@ -14,13 +14,8 @@ Monitors the following resources
 Usage
   - Run "make"
   - Run "./resmon"
-    - Log file is saved to ~/documents/logs/resmon.tsv
-  - Run "./plotter.pg" to plot a graph of the last hour's resource usage
-    (needs gnuplot)
+    - Log file is saved to ~/.reslog.tsv
+  - Run "./plotter.pg" to plot a graph of the last hour's resource usage (needs gnuplot)
 
 Notes
-  - All configuration for running and graphing is at the top of both source
-    files (resourceMonitor.c and plotter.pg); you will likely need to
-configure them by pointing them towards the appropriate system resources for
-relevant hardware
-
+  - All configuration for running and graphing is at the top of both source files (resourceMonitor.c and plotter.pg); you will likely need to configure them by pointing them towards the appropriate system resources for relevant hardware

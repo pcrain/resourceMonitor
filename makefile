@@ -5,4 +5,4 @@ debug:
 	gcc -O3 resourceMonitor.c -o resmon
 
 clean:
-	rm ./resmon
+	rm -f ./resmon
