@@ -1,8 +1,9 @@
 all:
-	gcc -Ofast -s -DNDEBUG resourceMonitor.c -o resmon
+	gcc -Wall -Ofast -s -DNDEBUG -march=native resourceMonitor.c -o resmon
+	# clang -Ofast -s -DNDEBUG -march=native resourceMonitor.c -o resmon
 
 debug:
-	gcc -O3 resourceMonitor.c -o resmon
+	gcc -Wall -O3 resourceMonitor.c -o resmon
 
 clean:
 	rm -f ./resmon

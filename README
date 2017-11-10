@@ -1,4 +1,4 @@
-Linux Resource Monitor, written in C -- version 0.2
+Linux Resource Monitor, written in C -- version 0.3
 
 Monitors the following resources
   - CPU Usage%

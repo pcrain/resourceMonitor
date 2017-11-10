@@ -1,11 +1,13 @@
-#include <stdio.h>                               //fscanf()
-#include <stdlib.h>                              //malloc()
-#include <unistd.h>                              //sleep()
+#include <stdio.h>                               //fopen(), fread(), etc.
+#include <unistd.h>                              //sleep(), read();
 #include <sys/time.h>                            //gettimeofday()
 #include <time.h>                                //time()
 #include <signal.h>                              //signal()
-#include <string.h>                              //memcpy()
 #include <sys/resource.h>                        //setpriority()
+
+#include <fcntl.h>                               //open
+#include <errno.h>
+#include <stdlib.h>
 
 // #define DEBUGIT                               //Comment out for release
 
@@ -35,11 +37,14 @@
 #define BLANKSTRING   "\t\t\t\t\t\t\t\t\t\t\t\n"
 
 //Useful constants and macros
+#define BATTPOLL      10/POLLSECONDS             //Rate to poll battery info
 #define MAXUINT       10000000000                //Max size of uints in LOGFILE
 #define BSIZE         256                        //Size of file read buffer
 #define ASNUM(x)      ((x)-'0')                  //Convert char to number
 #define ISNUM(x)      ((x)>='0' && (x)<='9')     //Check if a char is a numeral
 #define EXISTS(F)     (access((F),F_OK)!=-1)     //Check if a file exists
+#define TIMEBEG       u64 _t = utime();          //Begin and end a timer
+#define TIMEEND       printf("Took %llu us\n",utime()-_t);
 
 //Typedefs and other miscellaneous globals
 typedef unsigned long long u64;                  //Typedef for 64-bit uint
@@ -52,14 +57,9 @@ static volatile int   RUNNING = 1;               //Whether we're still running
 
 //Sigint handler to nicely close the log file
 static inline void intHandler(int dummy) {
-  if(RUNNING) {
-    printf("Closing nicely...\n");
-    RUNNING = 0;
-    fflush(OFILE); fclose(OFILE);
-    return;
-  }
-  printf("Closing immediately...\n");
-  exit(-10);
+  printf("Closing nicely...\n");
+  RUNNING = 0;
+  fflush(OFILE); fclose(OFILE);
 }
 
 //Get a microsecond resolution timestamp
@@ -82,14 +82,14 @@ static inline u64 read_uint_string(FILE* f) {
 static inline void read_and_write_chars(FILE* f, char t) {
   rewind(f);
   fread (BUFFER, 1, 16, f);
-  char nbytes;
+  unsigned char nbytes;
   for (nbytes = 0; ISNUM(BUFFER[nbytes]); ++nbytes);
   fwrite (BUFFER, 1, nbytes-t, OFILE);
   fwrite ("\t", 1, 1, OFILE);
 }
 
 //Find the nth integer in a file and return it
-static inline long long unsigned read_nth_uint_string(FILE* f, unsigned n) {
+static inline u64 read_nth_uint_string(FILE* f, unsigned n) {
   unsigned c        = 0;        //Counter for current uint we're in
   unsigned in_uint  = 0;        //Whether we're in a uint
   unsigned found    = 0;        //Whether we're in the nth uint
@@ -126,7 +126,7 @@ static inline void write_uint(u64 n, unsigned dplaces) {
     fwrite (&(CACHE[n][dplaces >> 1][0]) , 1, CLENS[n][dplaces >> 1], OFILE);
     return;
   }
-  char unit, pos = 0;
+  unsigned char unit, pos = 0;
   for (u64 e = MAXUINT; e > 0; e /= 10) {
     if (n < e) {
       if (pos == 0)
@@ -244,12 +244,11 @@ static inline void prepare_cache() {
   CLENS[10000][1] = 4;
 }
 
-
 int main(int argc, char** argv) {
   //Declare loop variables
     u64 lUser, lLow, lSys, lIdle, lPower, lSent, lRecv, lRead, lWrit;
     u64 logBeginTime = 0;
-    unsigned counter = 0;
+    unsigned counter = 0, battcount = 0;
 
   //Initialize log file
     if (!EXISTS(LOGFILE)) {
@@ -290,8 +289,11 @@ int main(int argc, char** argv) {
     lSent  = read_uint_string(netup_file);
     lPower = read_uint_string(power_file);
 
-  //Remember total RAM
-    u64 memTotal = read_nth_uint_string(mem_file,1);
+  //Remember total RAM / battery capacity
+    u64 memTotal  = read_nth_uint_string(mem_file,1);
+    double b_rate = 100.0/read_uint_string(bat_full_file);
+    u64 bat_charge = read_uint_string(bat_now_file);
+    u64 bat_current = read_uint_string(current_file) / 1000;
 
   prepare_cache();                 //Prepare write cache
   signal(SIGINT, intHandler);      //Register signal handler
@@ -302,14 +304,19 @@ int main(int argc, char** argv) {
   while(RUNNING) {  //Main log loop
     //Time
       u64 startTime = utime(); sleep(POLLSECONDS); //Refresh
+// TIMEBEG
 
     //RAM
       rewind(mem_file);
       u64 memFree = read_nth_uint_string(mem_file,3);
 
-    //Battery
-      u64 bat_full = read_uint_string(bat_full_file);
-      u64 bat_now  = read_uint_string(bat_now_file);
+    //Battery (polling is slow, so do so at most once every 10 seconds)
+      if (++battcount >= BATTPOLL) {
+        //Update battery info
+        bat_charge = read_uint_string(bat_now_file);
+        bat_current = read_uint_string(current_file) / 1000;
+        battcount = 0;
+      }
 
     //Internet Speed
       u64 recv = read_uint_string(netdn_file);
@@ -325,27 +332,31 @@ int main(int argc, char** argv) {
 
     //CPU
       rewind(stat_file);
+//BOTTLENECK (750 us)
       u64 tUser    = read_nth_uint_string(stat_file,1);
       u64 tUserLow = read_nth_uint_string(stat_file,1);
       u64 tSys     = read_nth_uint_string(stat_file,1);
       u64 tIdle    = read_nth_uint_string(stat_file,1);
+//END BOTTLENECK
       u64 total    = (tUser + tUserLow + tSys)-(lUser + lLow + lSys);
 
     //Write everything to file
       u64 delta = (utime()-startTime);
-      double scale = 1000000.0/delta;      //microsecond to second adjustment
+      double scale = 1000000.0/delta;       //microsecond to second adjustment
       write_uint((startTime/1000000)-logBeginTime,0);
       write_double(100*(double)(memTotal-memFree)/memTotal);
-      read_and_write_chars(temp_file,3);     //Read and write temperature/1000
-      read_and_write_chars(fan_file,0);      //Read and write fan speed
-      write_double(100*(double)bat_now/bat_full);
-      read_and_write_chars(current_file,3);  //Read and write battery current
+      read_and_write_chars(temp_file,3);    //Read and write temperature/1000
+//BOTTLENECK (700 us)
+      read_and_write_chars(fan_file,0);     //Read and write fan speed
+//END BOTTLENECK
+      write_double(b_rate*bat_charge);
+      write_uint(bat_current   ,0);
       write_uint(scale * (recv - lRecv)   ,0);
       write_uint(scale * (sent - lSent)   ,0);
       write_uint(scale * (read - lRead)   ,0);
       write_uint(scale * (writ - lWrit) ,0);
-      write_double(((double)(power - lPower))/delta);
-      write_double(((double)total/(total+(tIdle-lIdle)))*100);
+      write_double((double)(power - lPower)/delta);
+      write_double(100*(double)total/(total+(tIdle-lIdle)));
       fwrite ("\n" , 1, 1, OFILE);
 
     //Debug printing
@@ -355,7 +366,7 @@ int main(int argc, char** argv) {
         printf("RAM Usage:   %4.2f%%\n",(100.0f*(memTotal-memFree))/memTotal);
         printf("CPU Temp:    %u C\n",read_uint_string(temp_file)/1000);
         printf("Fan Speed:   %u RPM\n",read_uint_string(fan_file));
-        printf("Bat Charge:  %4.2f%%\n",100*(float)bat_now/bat_full);
+        printf("Bat Charge:  %4.2f%%\n",write_double(b_rate*bat_charge));
         printf("Bat Current: %u mJ\n",read_uint_string(current_file)/1000);
         printf("Download:    %4.2f bytes/sec\n",1000000.0f*(recv-lRecv)/delta);
         printf("Upload:      %4.2f bytes/sec\n",1000000.0f*(sent-lSent)/delta);
@@ -375,6 +386,7 @@ int main(int argc, char** argv) {
       if (++counter == FLUSHRATE) {
         fflush(OFILE); counter = 0;
       }
+// TIMEEND
   }
 
   //Clean up
