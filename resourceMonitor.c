@@ -247,7 +247,7 @@ static inline void prepare_cache() {
 int main(int argc, char** argv) {
   //Declare loop variables
     u64 lUser, lLow, lSys, lIdle, lPower, lSent, lRecv, lRead, lWrit;
-    u64 logBeginTime = 0;
+    u64 startTime, logBeginTime = 0, lastTime = 0;
     unsigned counter = 0, battcount = 0;
 
   //Initialize log file
@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
       logBeginTime = read_uint_string(OFILE);
       fclose(OFILE);
       OFILE = fopen (LOGFILE , "a");
-    fprintf(OFILE, BLANKSTRING);
+      fprintf(OFILE, BLANKSTRING);
     }
 
   //Initialize file handles
@@ -301,11 +301,15 @@ int main(int argc, char** argv) {
 
   printf("Resource monitoring started\n");
 
+  startTime = utime();
   while(RUNNING) {  //Main log loop
     //Time
-      u64 startTime = utime(); sleep(POLLSECONDS); //Refresh
-// TIMEBEG
-
+      lastTime = startTime;
+      startTime = utime();
+      if ((startTime-lastTime)/1000000 > 3*POLLSECONDS) {
+        fprintf(OFILE, BLANKSTRING); //Add a blank line after extended suspend
+      }
+      sleep(POLLSECONDS);
     //RAM
       rewind(mem_file);
       u64 memFree = read_nth_uint_string(mem_file,3);
@@ -386,7 +390,6 @@ int main(int argc, char** argv) {
       if (++counter == FLUSHRATE) {
         fflush(OFILE); counter = 0;
       }
-// TIMEEND
   }
 
   //Clean up
