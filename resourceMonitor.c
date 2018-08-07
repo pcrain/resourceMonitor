@@ -1,3 +1,6 @@
+// TODO:
+//   - Segfault when resuming frmo suspend (new file handles?)
+
 #include <stdio.h>                               //fopen(), fread(), etc.
 #include <unistd.h>                              //sleep(), read();
 #include <sys/time.h>                            //gettimeofday()
@@ -14,14 +17,19 @@
 //User configurables
 #define POLLSECONDS   1                          //Seconds between polls
 #define FLUSHRATE     60                         //Polls between writes to disk
-#define IDEVICE       "wlp1s0"                   //Primary internet interface
+#define SSIZE         512                        //Size of disk sector
 #define DRIVE         "sda"                      //Primary hard drive
+#define IDEVICE       "wlp1s0"                   //Primary internet interface
 #define USER          "pretzel"                  //Name of login user
 #define LOGFILE       "/home/"USER"/.reslog.tsv" //Location to save log file
+#define TMPFILE       "/tmp/.reslog.tsv"         //Location to save temp file
 
 //File locations for various assets
 #define TEMP_FILE     "/sys/class/thermal/thermal_zone3/temp"
-#define FAN_FILE      "/sys/class/hwmon/hwmon3/fan1_input"
+#define FAN_FILE      "/sys/class/hwmon/hwmon1/fan1_input"
+#define FAN_FILE_2    "/sys/class/hwmon/hwmon2/fan1_input"
+#define FAN_FILE_3    "/sys/class/hwmon/hwmon3/fan1_input"
+#define FAN_FILE_4    "/sys/class/hwmon/hwmon4/fan1_input"
 #define AC_FILE       "/sys/class/power_supply/AC/online"
 #define BAT_FULL_FILE "/sys/class/power_supply/BAT0/charge_full"
 #define BAT_NOW_FILE  "/sys/class/power_supply/BAT0/charge_now"
@@ -49,6 +57,7 @@
 //Typedefs and other miscellaneous globals
 typedef unsigned long long u64;                  //Typedef for 64-bit uint
 static FILE*          OFILE;                     //Log file handle
+static FILE*          TFILE;                     //Temp file handle
 static char           BUFFER[BSIZE];             //Generic character buffer
 static char           CACHE[10001][2][8];        //Cached strings
 static char           CLENS[10001][2];           //Cached string lengths
@@ -60,6 +69,7 @@ static inline void intHandler(int dummy) {
   printf("Closing nicely...\n");
   RUNNING = 0;
   fflush(OFILE); fclose(OFILE);
+  fflush(TFILE); fclose(TFILE);
 }
 
 //Get a microsecond resolution timestamp
@@ -86,6 +96,8 @@ static inline void read_and_write_chars(FILE* f, char t) {
   for (nbytes = 0; ISNUM(BUFFER[nbytes]); ++nbytes);
   fwrite (BUFFER, 1, nbytes-t, OFILE);
   fwrite ("\t", 1, 1, OFILE);
+  fwrite (BUFFER, 1, nbytes-t, TFILE);
+  fwrite ("\t", 1, 1, TFILE);
 }
 
 //Find the nth integer in a file and return it
@@ -124,6 +136,7 @@ static inline u64 read_nth_uint_string(FILE* f, unsigned n) {
 static inline void write_uint(u64 n, unsigned dplaces) {
   if (n <= 10000) { //Write an already-formatted string if we're already cached
     fwrite (&(CACHE[n][dplaces >> 1][0]) , 1, CLENS[n][dplaces >> 1], OFILE);
+    fwrite (&(CACHE[n][dplaces >> 1][0]) , 1, CLENS[n][dplaces >> 1], TFILE);
     return;
   }
   unsigned char unit, pos = 0;
@@ -141,6 +154,7 @@ static inline void write_uint(u64 n, unsigned dplaces) {
   }
   BUFFER[pos] = '\t';
   fwrite (BUFFER , 1, pos+1, OFILE);
+  fwrite (BUFFER , 1, pos+1, TFILE);
   return;
 }
 
@@ -244,6 +258,29 @@ static inline void prepare_cache() {
   CLENS[10000][1] = 4;
 }
 
+static inline FILE* reload_fan_file(FILE* old_fan_file) {
+  if (old_fan_file != NULL) {
+    if (fflush(old_fan_file) == 0) {
+      fclose(old_fan_file);
+    }
+  }
+  FILE* fan_file;
+  if(EXISTS(FAN_FILE)) {
+    fan_file = fopen((FAN_FILE),"r");   setvbuf(fan_file, NULL, _IONBF, 0);
+  } else if(EXISTS(FAN_FILE_2)) {
+    fan_file = fopen((FAN_FILE_2),"r"); setvbuf(fan_file, NULL, _IONBF, 0);
+  } else if(EXISTS(FAN_FILE_3)) {
+    fan_file = fopen((FAN_FILE_3),"r"); setvbuf(fan_file, NULL, _IONBF, 0);
+  } else {
+    fan_file = fopen((FAN_FILE_4),"r"); setvbuf(fan_file, NULL, _IONBF, 0);
+  }
+  return fan_file;
+}
+
+static inline FILE* load_fan_file() {
+  return reload_fan_file(NULL);
+}
+
 int main(int argc, char** argv) {
   //Declare loop variables
     u64 lUser, lLow, lSys, lIdle, lPower, lSent, lRecv, lRead, lWrit;
@@ -263,6 +300,10 @@ int main(int argc, char** argv) {
       fprintf(OFILE, BLANKSTRING);
     }
 
+  //Initialize temp log file
+    //(Resides in tmpfs; contains last line of output from log)
+    TFILE = fopen (TMPFILE , "a");
+
   //Initialize file handles
     #define INIT(h,f) FILE* h = fopen((f),"r"); setvbuf(h, NULL, _IONBF, 0)
     INIT(stat_file     , "/proc/stat");
@@ -270,13 +311,15 @@ int main(int argc, char** argv) {
     INIT(netdn_file    , NET_DN_FILE);
     INIT(mem_file      , "/proc/meminfo");
     INIT(temp_file     , TEMP_FILE);
-    INIT(fan_file      , FAN_FILE);
     INIT(ac_file       , AC_FILE);
     INIT(bat_full_file , BAT_FULL_FILE);
     INIT(bat_now_file  , BAT_NOW_FILE);
     INIT(current_file  , CURRENT_FILE);
     INIT(power_file    , POWER_FILE);
     INIT(disk_file     , DISK_FILE);
+
+  //Load fan file separately due to being often missing
+    FILE* fan_file = load_fan_file();
 
   //Initialize time-based data
     lUser  = read_nth_uint_string(stat_file,1);
@@ -307,7 +350,8 @@ int main(int argc, char** argv) {
       lastTime = startTime;
       startTime = utime();
       if ((startTime-lastTime)/1000000 > 3*POLLSECONDS) {
-        fprintf(OFILE, BLANKSTRING); //Add a blank line after extended suspend
+        fprintf(OFILE, BLANKSTRING);  //Add a blank line after extended suspend
+        fan_file = reload_fan_file(fan_file); //Reload the fan fle after suspend
       }
       sleep(POLLSECONDS);
     //RAM
@@ -357,11 +401,12 @@ int main(int argc, char** argv) {
       write_uint(bat_current   ,0);
       write_uint(scale * (recv - lRecv)   ,0);
       write_uint(scale * (sent - lSent)   ,0);
-      write_uint(scale * (read - lRead)   ,0);
-      write_uint(scale * (writ - lWrit) ,0);
+      write_uint(scale * SSIZE * (read - lRead) ,0);
+      write_uint(scale * SSIZE * (writ - lWrit) ,0);
       write_double((double)(power - lPower)/delta);
       write_double(100*(double)total/(total+(tIdle-lIdle)));
       fwrite ("\n" , 1, 1, OFILE);
+      fwrite ("\n" , 1, 1, TFILE);
 
     //Debug printing
       #ifdef DEBUGIT
@@ -386,10 +431,11 @@ int main(int argc, char** argv) {
       lPower = power;
       lUser  = tUser; lLow = tUserLow; lSys = tSys; lIdle = tIdle;
 
-    //Flush write buffer to log file
+    //Flush write buffer to log and temp files
       if (++counter == FLUSHRATE) {
         fflush(OFILE); counter = 0;
       }
+      fflush(TFILE);
   }
 
   //Clean up
