@@ -302,7 +302,7 @@ int main(int argc, char** argv) {
 
   //Initialize temp log file
     //(Resides in tmpfs; contains last line of output from log)
-    TFILE = fopen (TMPFILE , "a");
+    TFILE = fopen (TMPFILE , "w");
 
   //Initialize file handles
     #define INIT(h,f) FILE* h = fopen((f),"r"); setvbuf(h, NULL, _IONBF, 0)
@@ -354,6 +354,9 @@ int main(int argc, char** argv) {
         fan_file = reload_fan_file(fan_file); //Reload the fan fle after suspend
       }
       sleep(POLLSECONDS);
+    //Reopen / rewind TMPFILE
+      fseek(TFILE,0,SEEK_SET);
+      // freopen (TMPFILE , "w", TFILE);
     //RAM
       rewind(mem_file);
       u64 memFree = read_nth_uint_string(mem_file,3);
@@ -436,6 +439,7 @@ int main(int argc, char** argv) {
         fflush(OFILE); counter = 0;
       }
       fflush(TFILE);
+
   }
 
   //Clean up
